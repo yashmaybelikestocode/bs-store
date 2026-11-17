@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rankle Vote Search</title>
+<meta name="description" content="A mini search engine comparing old keyword-count ranking with link-vote ranking (PageRank), and spotting fake websites.">
+<style>
+  :root {
+    --bg: #fbf6ec; --paper: #fffdf8; --ink: #17150f; --muted: #6b6455; --line: #17150f; --soft: #efe7d6;
+    --yellow: #ffd23f; --blue: #2f6bff; --old: #e4572e; --old-soft: #fde3d9; --new: #1f9d6b; --new-soft: #d9f3e7;
+    --warn: #c47a00; --warn-soft: #fff0cc; --shadow: 4px 4px 0 var(--line);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14130f; --paper: #1d1b16; --ink: #f3eee2; --muted: #a9a190; --line: #f3eee2; --soft: #2a2720;
+      --yellow: #e8bd2a; --blue: #7aa2ff; --old: #ff8a65; --old-soft: #3a2119; --new: #4fd39b; --new-soft: #15332a;
+      --warn: #f0b545; --warn-soft: #3a2d10;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14130f; --paper: #1d1b16; --ink: #f3eee2; --muted: #a9a190; --line: #f3eee2; --soft: #2a2720;
+    --yellow: #e8bd2a; --blue: #7aa2ff; --old: #ff8a65; --old-soft: #3a2119; --new: #4fd39b; --new-soft: #15332a;
+    --warn: #f0b545; --warn-soft: #3a2d10;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 15px; line-height: 1.5; }
+  .serif { font-family: Georgia, "Times New Roman", serif; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+
+  .topbar { border-bottom: 2px solid var(--line); background: var(--paper); position: sticky; top: 0; z-index: 5; }
+  .topbar .wrap { display: flex; align-items: center; gap: 16px; height: 58px; }
+  .brand { font-family: Georgia, serif; font-weight: 900; font-size: 24px; letter-spacing: 1px; display: flex; align-items: center; gap: 8px; }
+  .brand .box { background: var(--yellow); color: #17150f; border: 2px solid var(--line); padding: 0 8px; box-shadow: 3px 3px 0 var(--line); }
+  .brand small { font-family: ui-monospace, Menlo, monospace; font-size: 11px; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+  .topnav { margin-left: auto; display: flex; gap: 4px; align-items: center; }
+  .topnav a { color: var(--ink); text-decoration: none; font-size: 13px; padding: 6px 10px; }
+  .topnav a:hover { background: var(--soft); }
+  .btn { border: 2px solid var(--line); background: var(--paper); color: var(--ink); font-weight: 700; font-size: 13px; padding: 7px 12px; cursor: pointer; box-shadow: 3px 3px 0 var(--line); border-radius: 0; }
+  .btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--line); }
+  .btn.yellow { background: var(--yellow); color: #17150f; }
+  .btn.red { background: var(--old); color: #17150f; }
+
+  .hero { padding: 40px 0 24px; display: grid; grid-template-columns: 1.1fr .9fr; gap: 32px; align-items: end; }
+  .kicker { font-family: ui-monospace, Menlo, monospace; font-size: 12px; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); }
+  .hero h1 { font-family: Georgia, serif; font-size: 46px; line-height: 1.05; margin: 8px 0 12px; }
+  .hero h1 .hl { background: linear-gradient(transparent 58%, var(--yellow) 58%); }
+  .hero p { color: var(--muted); margin: 0; max-width: 520px; }
+  .stamp { border: 2px solid var(--line); background: var(--paper); box-shadow: var(--shadow); padding: 16px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+  .stamp b { font-family: Georgia, serif; font-size: 15px; }
+  .stamp pre { margin: 8px 0 0; white-space: pre-wrap; columns: 2; column-gap: 16px; }
+
+  .searchbox { border: 2px solid var(--line); background: var(--paper); box-shadow: var(--shadow); display: flex; margin-top: 8px; }
+  .searchbox span { padding: 0 14px; display: flex; align-items: center; font-family: ui-monospace, Menlo, monospace; font-weight: 700; border-right: 2px solid var(--line); background: var(--yellow); color: #17150f; }
+  .searchbox input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 18px; padding: 14px; }
+  .searchbox button { border: 0; border-left: 2px solid var(--line); background: var(--ink); color: var(--bg); font-weight: 700; padding: 0 22px; cursor: pointer; font-size: 15px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 16px 0 0; }
+  .chip { border: 1.5px solid var(--line); background: transparent; color: var(--ink); padding: 4px 10px; font-size: 13px; cursor: pointer; border-radius: 999px; }
+  .chip:hover { background: var(--soft); }
+  .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; user-select: none; }
+  .switch input { width: 18px; height: 18px; accent-color: var(--new); }
+  .seg { display: inline-flex; border: 2px solid var(--line); }
+  .seg button { border: 0; background: var(--paper); color: var(--ink); padding: 5px 10px; font-size: 12px; cursor: pointer; font-weight: 600; }
+  .seg button + button { border-left: 2px solid var(--line); }
+  .seg button.on { background: var(--ink); color: var(--bg); }
+  .spacer { flex: 1; }
+
+  .sec { padding: 36px 0 8px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; border-bottom: 2px solid var(--line); padding-bottom: 8px; margin-bottom: 18px; }
+  .sec-head .num { font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: var(--muted); }
+  .sec-head h2 { font-family: Georgia, serif; font-size: 28px; margin: 0; }
+  .sec-head p { margin: 0 0 0 auto; color: var(--muted); font-size: 13px; text-align: right; }
+  .lead { color: var(--muted); margin: 0 0 16px; }
+
+  .verdict { border: 2px solid var(--line); background: var(--yellow); color: #17150f; padding: 12px 16px; font-weight: 600; box-shadow: var(--shadow); margin-bottom: 20px; }
+  .battle { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .col { border: 2px solid var(--line); background: var(--paper); box-shadow: var(--shadow); min-width: 0; }
+  .col-head { padding: 12px 16px; border-bottom: 2px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .col-head h3 { margin: 0; font-family: Georgia, serif; font-size: 20px; }
+  .col-head .era { font-family: ui-monospace, Menlo, monospace; font-size: 11px; padding: 2px 8px; border: 1.5px solid var(--line); }
+  .col.old .col-head { background: var(--old-soft); }
+  .col.new .col-head { background: var(--new-soft); }
+  .col-sub { padding: 8px 16px; font-size: 13px; color: var(--muted); border-bottom: 1px dashed var(--line); }
+  .item { padding: 14px 16px; border-bottom: 1px dashed var(--line); display: grid; grid-template-columns: 34px 1fr; gap: 10px; }
+  .item:last-child { border-bottom: 0; }
+  .pos { font-family: Georgia, serif; font-size: 26px; font-weight: 700; line-height: 1; }
+  .site { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); word-break: break-all; }
+  .title { color: var(--blue); font-weight: 700; font-size: 16px; cursor: pointer; text-decoration: none; display: inline; }
+  .title:hover { text-decoration: underline; }
+  .snip { font-size: 13px; color: var(--muted); margin: 4px 0 6px; overflow-wrap: anywhere; }
+  .metric { display: flex; align-items: center; gap: 8px; font-size: 12px; font-family: ui-monospace, Menlo, monospace; }
+  .metric .track { flex: 1; height: 8px; background: var(--soft); border: 1.5px solid var(--line); min-width: 40px; }
+  .metric .fill { height: 100%; }
+  .old .fill { background: var(--old); }
+  .new .fill { background: var(--new); }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border: 1.5px solid currentColor; margin-left: 6px; vertical-align: 2px; white-space: nowrap; }
+  .t-real { color: var(--new); }
+  .t-unsure { color: var(--warn); }
+  .t-fake { color: var(--old); }
+  .fake-row { background: repeating-linear-gradient(-45deg, transparent 0 8px, var(--old-soft) 8px 16px); }
+  .empty { padding: 20px 16px; color: var(--muted); }
+  mark { background: var(--yellow); color: #17150f; padding: 0 1px; }
+
+  .vs { display: grid; grid-template-columns: 1fr 70px 1fr; align-items: stretch; }
+  .vs .mid { display: flex; align-items: center; justify-content: center; font-family: Georgia, serif; font-size: 30px; font-weight: 900; font-style: italic; }
+  .vcard { border: 2px solid var(--line); background: var(--paper); box-shadow: var(--shadow); padding: 18px; min-width: 0; }
+  .vcard .ribbon { display: inline-block; font-family: ui-monospace, Menlo, monospace; font-size: 11px; font-weight: 700; padding: 3px 8px; border: 2px solid var(--line); margin-bottom: 10px; color: #17150f; }
+  .vcard.real .ribbon { background: var(--new); }
+  .vcard.fake .ribbon { background: var(--old); }
+  .vcard h3 { margin: 4px 0; font-family: Georgia, serif; font-size: 19px; }
+  .big { font-family: Georgia, serif; font-size: 52px; font-weight: 900; line-height: 1; margin: 14px 0 2px; }
+  .vcard.real .big { color: var(--new); }
+  .vcard.fake .big { color: var(--old); }
+  .meter { height: 14px; border: 2px solid var(--line); background: var(--soft); margin: 8px 0 14px; }
+  .meter > div { height: 100%; }
+  .facts { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+  .facts li { padding: 6px 0; border-top: 1px dashed var(--line); display: grid; grid-template-columns: 22px 1fr; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; background: var(--paper); }
+  th, td { padding: 8px 12px; border: 1.5px solid var(--line); text-align: left; }
+  th { background: var(--soft); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+  td.n, th.n { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+  .tablebox { overflow-x: auto; box-shadow: var(--shadow); margin-top: 20px; }
+
+  .hood { display: grid; grid-template-columns: 1.2fr .8fr; gap: 20px; }
+  .panel { border: 2px solid var(--line); background: var(--paper); box-shadow: var(--shadow); padding: 14px; min-width: 0; }
+  .panel h4 { margin: 0 0 8px; font-family: Georgia, serif; font-size: 17px; }
+  .panel svg { width: 100%; height: auto; display: block; }
+  .formula { font-family: ui-monospace, Menlo, monospace; font-size: 13px; background: var(--soft); border: 1.5px solid var(--line); padding: 12px; overflow-x: auto; white-space: nowrap; }
+  .steps { margin: 10px 0 0; padding-left: 18px; font-size: 14px; }
+  .steps li { margin-bottom: 6px; }
+  .then-now { display: grid; grid-template-columns: 1fr 1fr; border: 2px solid var(--line); box-shadow: var(--shadow); margin-top: 20px; background: var(--paper); }
+  .then-now > div { padding: 16px; }
+  .then-now > div + div { border-left: 2px solid var(--line); }
+  .then-now h4 { margin: 0 0 6px; font-family: Georgia, serif; font-size: 18px; }
+  .then-now ul { margin: 0; padding-left: 18px; font-size: 14px; }
+
+  /* Fake lab */
+  .lab { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 13px; font-weight: 600; }
+  .field input, .field select {
+    border: 2px solid var(--line); background: var(--paper); color: var(--ink); padding: 8px 10px; font-size: 14px; border-radius: 0; font-weight: 400;
+  }
+  .field .hint { font-weight: 400; color: var(--muted); font-size: 12px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .added { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+  .added li { padding: 8px 0; border-top: 1px dashed var(--line); display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  .added li button { border: 1.5px solid var(--line); background: transparent; color: var(--ink); cursor: pointer; font-size: 12px; padding: 2px 8px; }
+
+  textarea { width: 100%; min-height: 200px; font-family: ui-monospace, Menlo, monospace; font-size: 14px; border: 2px solid var(--line); padding: 12px; background: var(--paper); color: var(--ink); box-shadow: var(--shadow); border-radius: 0; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 14px; }
+  .err { color: var(--old); font-size: 13px; font-weight: 600; }
+  .note { margin-top: 16px; border-left: 4px solid var(--yellow); padding: 8px 12px; background: var(--paper); font-size: 14px; }
+  .note:empty { display: none; }
+  footer { border-top: 2px solid var(--line); margin-top: 40px; padding: 18px 0 40px; font-size: 13px; color: var(--muted); }
+
+  @media (max-width: 820px) {
+    .hero { grid-template-columns: 1fr; }
+    .hero h1 { font-size: 36px; }
+    .battle, .hood, .then-now, .lab { grid-template-columns: 1fr; }
+    .then-now > div + div { border-left: 0; border-top: 2px solid var(--line); }
+    .vs { grid-template-columns: 1fr; gap: 12px; }
+    .vs .mid { font-size: 24px; }
+    .topnav a { display: none; }
+    .sec-head { flex-wrap: wrap; }
+    .sec-head p { margin: 0; text-align: left; width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="wrap">
+    <div class="brand"><span class="box">RANKLE</span><small>vote-powered search</small></div>
+    <nav class="topnav">
+      <a href="#battle">Old vs new</a>
+      <a href="#realfake">Real vs fake</a>
+      <a href="#lab">Add fakes</a>
+      <a href="#hood">How it works</a>
+      <a href="#data">Data</a>
+      <button class="btn" id="themeBtn" type="button">◐ Theme</button>
+    </nav>
+  </div>
+</div>
+
+<div class="wrap">
+  <section class="hero">
+    <div>
+      <div class="kicker">A mini search engine · <span id="pageCount">11</span> pages</div>
+      <h1>Rank by <span class="hl">votes</span>,<br>not by repetition.</h1>
+      <p>Early search engines trusted the page that repeated your keyword the most, so spammers stuffed keywords. Rankle counts the links pointing to a page instead. Each link is a vote, and a vote from a trusted page counts for more.</p>
+    </div>
+    <div class="stamp">
+      <b>The link data</b>
+      <pre id="dataPreview"></pre>
+    </div>
+  </section>
+
+  <form class="searchbox" id="searchForm" role="search">
+    <span>?</span>
+    <input id="q" type="search" value="pizza" placeholder="Search the mini web…" autocomplete="off" aria-label="Search">
+    <button type="submit">Search</button>
+  </form>
+  <div class="controls">
+    <span class="kicker" style="letter-spacing:1px">Try:</span>
+    <div id="suggest" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    <div class="spacer"></div>
+    <label class="switch"><input type="checkbox" id="hideFake"> Hide fake pages</label>
+    <div class="seg" id="method" title="How PageRank is computed">
+      <button type="button" class="on" data-m="formula">Formula</button>
+      <button type="button" data-m="surfer">Random surfer</button>
+    </div>
+  </div>
+
+  <!-- 01 OLD VS NEW -->
+  <section class="sec" id="battle">
+    <div class="sec-head"><span class="num">01</span><h2>The old way vs the PageRank way</h2><p id="meta"></p></div>
+    <div class="verdict" id="verdict"></div>
+    <div class="battle">
+      <div class="col old">
+        <div class="col-head"><h3>Old way</h3><span class="era">≈ 1995</span></div>
+        <div class="col-sub">Ranks by how many times your keyword appears on the page</div>
+        <div id="oldList"></div>
+      </div>
+      <div class="col new">
+        <div class="col-head"><h3>PageRank way</h3><span class="era">≈ 1998 →</span></div>
+        <div class="col-sub" id="newSub"></div>
+        <div id="newList"></div>
+      </div>
+    </div>
+    <div class="then-now">
+      <div>
+        <h4 style="color:var(--old)">Why the old way failed</h4>
+        <ul>
+          <li>A page that types “pizza” 12 times beats a real pizzeria that says it twice.</li>
+          <li>Anyone can repeat a word 100 times, so it costs spammers nothing.</li>
+          <li>The page judges itself. Nobody else has to vouch for it.</li>
+        </ul>
+      </div>
+      <div>
+        <h4 style="color:var(--new)">Why PageRank works</h4>
+        <ul>
+          <li>Other sites decide your rank by linking to you.</li>
+          <li>A vote from an important page carries more weight.</li>
+          <li>Keyword stuffing and links you make to yourself don’t raise your score.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 REAL VS FAKE -->
+  <section class="sec" id="realfake">
+    <div class="sec-head"><span class="num">02</span><h2>Real website vs fake website</h2><p>How likely is each page to be real?</p></div>
+    <div class="vs" id="vs"></div>
+    <div class="tablebox"><table id="trustTable"></table></div>
+  </section>
+
+  <!-- 03 FAKE LAB -->
+  <section class="sec" id="lab">
+    <div class="sec-head"><span class="num">03</span><h2>Add your own fake websites</h2><p>Spam the old way and see if PageRank is fooled</p></div>
+    <div class="lab">
+      <form class="panel" id="fakeForm">
+        <h4>Build a fake site</h4>
+        <div class="presets" id="presets"></div>
+        <div class="field">Website name
+          <input id="fName" required maxlength="60" value="cheap-pizza-deals-now.biz">
+        </div>
+        <div class="two">
+          <div class="field">Keyword to stuff
+            <input id="fWord" required maxlength="30" value="pizza">
+          </div>
+          <div class="field">Repeat it
+            <input id="fTimes" type="number" min="1" max="200" value="25">
+          </div>
+        </div>
+        <div class="two">
+          <div class="field">Links out to
+            <input id="fLinks" maxlength="40" value="7, 8" placeholder="e.g. 2, 7">
+            <span class="hint">Page numbers it links to</span>
+          </div>
+          <div class="field">Link-farm pages
+            <input id="fFarm" type="number" min="0" max="20" value="0">
+            <span class="hint">Extra junk pages that vote for it</span>
+          </div>
+        </div>
+        <div class="row" style="margin-top:4px">
+          <button class="btn red" type="submit">+ Add fake website</button>
+          <span class="err" id="fakeErr"></span>
+        </div>
+      </form>
+      <div class="panel">
+        <h4>Fake sites you added</h4>
+        <ul class="added" id="addedList"></ul>
+        <div class="row">
+          <button class="btn" id="clearFakes" type="button">Remove all added fakes</button>
+        </div>
+        <div class="note" id="labNote"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 UNDER THE HOOD -->
+  <section class="sec" id="hood">
+    <div class="sec-head"><span class="num">04</span><h2>Under the hood</h2><p>PageRank on the link data</p></div>
+    <div class="hood">
+      <div class="panel">
+        <h4>Who links to whom</h4>
+        <svg id="graph" viewBox="0 0 640 460" role="img" aria-label="Link graph"></svg>
+        <div class="site" style="margin-top:6px">Circle size = PageRank · red = likely fake · dashed = links from a fake page</div>
+      </div>
+      <div class="panel">
+        <h4>The formula</h4>
+        <div class="formula">PR(A) = (1−d)/N + d · Σ PR(B)/Out(B)</div>
+        <ol class="steps">
+          <li>Every page starts with an equal share: 1/N.</li>
+          <li>Each page splits its score evenly among the pages it links to.</li>
+          <li>d = 0.85: the surfer follows a link 85% of the time and jumps to a random page 15% of the time.</li>
+          <li>Repeat until the scores stop changing.</li>
+        </ol>
+        <h4 style="margin-top:14px">Random surfer check</h4>
+        <p class="snip" id="surferNote"></p>
+        <h4 style="margin-top:14px">Chance it’s real</h4>
+        <div class="formula">real% = 95·(1−e<sup>−1.3·PR·N</sup>) + 3·trusted links</div>
+        <p class="snip" style="margin-top:6px">A trusted link comes from a page that has inbound links itself. With no trusted links, the score is capped at 15%.</p>
+      </div>
+    </div>
+    <h4 class="serif" style="font-size:18px;margin:24px 0 4px">Scores after each round</h4>
+    <p class="lead" id="iterNote"></p>
+    <div class="tablebox" style="margin-top:6px"><table id="iterTable"></table></div>
+  </section>
+
+  <!-- 05 DATA -->
+  <section class="sec" id="data">
+    <div class="sec-head"><span class="num">05</span><h2>Edit the link data</h2><p>Format: Page1-&gt;2,3 · lines starting with # are notes</p></div>
+    <textarea id="dataInput" spellcheck="false"></textarea>
+    <div class="row">
+      <button class="btn yellow" id="recalc" type="button">Recalculate</button>
+      <button class="btn" id="reset" type="button">Reset everything</button>
+      <span class="err" id="dataErr"></span>
+    </div>
+  </section>
+
+  <footer>Rankle is a learning demo of link-based ranking (PageRank) over a mini web. All websites shown are fictional.</footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  // Your data (Pages 1–6) plus a pizza neighbourhood (Pages 7–11)
+  const ORIGINAL_DATA = [
+    "# Your data",
+    "Page1->2", "Page2->1,3", "Page3->2,4", "Page4->2,5", "Page5->2", "Page6->1",
+    "# Pizza websites",
+    "Page7->8", "Page8->7,9,11", "Page9->7,8", "Page10->7", "Page11->7"
+  ].join("\n");
+  const D = 0.85, SURFER_MOVES = 100000;
+
+  // Fictional mini web. Page6 and Page10 are keyword-stuffed fakes.
+  const BASE = {
+    1: { title: "OpenLearn Academy – Free Programming Courses", url: "openlearn-academy.org",
+         body: "Learn coding with free courses. Our Python course and JavaScript course teach programming from zero, with exercises, projects and certificates." },
+    2: { title: "WikiVerse – The Free Encyclopedia", url: "wikiverse.org",
+         body: "A community encyclopedia with articles on science, history, technology, programming, food like pizza, and the web. Read how search engines and PageRank work." },
+    3: { title: "TechDaily – Technology News", url: "techdaily-news.com",
+         body: "Tech news every day: laptop reviews, smartphone reviews and AI news. This week, the best laptop for students and how search engines rank pages." },
+    4: { title: "DevForum – Programming Q&A", url: "devforum.dev",
+         body: "Ask programming questions and get answers from developers. Popular threads: how to learn coding, Python errors, and the PageRank algorithm explained." },
+    5: { title: "CodeBox – Online Code Compiler", url: "codebox-run.io",
+         body: "Run code online. Write Python, C++ and JavaScript in your browser and learn coding by doing." },
+    6: { title: "FREE LAPTOP!!! Learn Coding Free – Claim Now", url: "free-prize-claim.xyz",
+         body: "free laptop free laptop FREE LAPTOP win a free laptop. learn coding learn coding learn coding learn coding free. python python python javascript javascript programming programming. tech news tech news tech news. claim your prize now free free free", fake: true },
+    7: { title: "Fornello Pizzeria – Wood-Fired Pizza", url: "fornello-pizzeria.in",
+         body: "Fresh wood-fired pizza made daily with hand-stretched dough. Try our margherita and cheese burst pizza. Dine in or order online." },
+    8: { title: "CityBites – Local Food Guide", url: "citybites-guide.in",
+         body: "Where to eat in town: street food, biryani, cafés and the best pizza places, reviewed by locals." },
+    9: { title: "Campus Canteen Blog", url: "campus-canteen-blog.in",
+         body: "Student reviews of canteen food, chai, and Friday pizza night. Cheap eats near college." },
+    10: { title: "PIZZA PIZZA PIZZA – Best Pizza Cheap Pizza Free Pizza", url: "pizza-pizza-pizza.biz",
+         body: "pizza pizza pizza best pizza cheap pizza free pizza pizza deal pizza offer pizza pizza pizza near me pizza pizza order pizza now", fake: true },
+    11: { title: "HomeSlice – Pizza Recipes", url: "homeslice-recipes.com",
+         body: "Make pizza at home: easy pizza dough, tomato sauce and baking tips for a crisp base." }
+  };
+  let extra = {};       // id -> content for user-added fakes and farm pages
+  let addedFakes = [];  // [{id, farm:[ids]}]
+  const content = id => extra[id] || BASE[id] || { title: "Page " + id, url: "page" + id + ".example", body: "A page added in the data editor." };
+
+  let graph, ranks = {}, formulaRanks = {}, surferRanks = {}, iterations = [];
+  let method = "formula", currentData = ORIGINAL_DATA;
+  let clicks = {};
+  try { clicks = JSON.parse(localStorage.getItem("rankle-clicks") || "{}") || {}; } catch (e) { clicks = {}; }
+
+  // ---------- Parse ----------
+  function parse(text) {
+    const out = {};
+    const lines = text.split(/\n+/).map(l => l.trim()).filter(l => l && !l.startsWith("#"));
+    if (!lines.length) throw new Error("Add at least one line.");
+    for (const line of lines) {
+      const m = line.match(/^page\s*(\d+)\s*-+>\s*(.*)$/i);
+      if (!m) throw new Error("Can't read “" + line + "”. Use Page1->2,3");
+      const id = Number(m[1]);
+      const t = m[2].split(/[,\s]+/).filter(Boolean).map(x => Number(x.replace(/page/i, "")));
+      if (t.some(isNaN)) throw new Error("Bad target in “" + line + "”");
+      out[id] = Array.from(new Set((out[id] || []).concat(t.filter(x => x !== id))));
+    }
+    Object.values(out).flat().forEach(t => { if (!(t in out)) out[t] = []; });
+    const ids = Object.keys(out).map(Number).sort((a, b) => a - b);
+    const inbound = {};
+    ids.forEach(i => inbound[i] = []);
+    ids.forEach(i => out[i].forEach(t => inbound[t].push(i)));
+    return { ids, out, inbound };
+  }
+
+  // ---------- PageRank ----------
+  function pageRank(g) {
+    const N = g.ids.length;
+    let pr = {};
+    g.ids.forEach(i => pr[i] = 1 / N);
+    const hist = [Object.assign({}, pr)];
+    for (let it = 0; it < 300; it++) {
+      let dangling = 0;
+      g.ids.forEach(i => { if (!g.out[i].length) dangling += pr[i]; });
+      const next = {};
+      g.ids.forEach(i => {
+        let s = 0;
+        g.inbound[i].forEach(j => s += pr[j] / g.out[j].length);
+        next[i] = (1 - D) / N + D * (s + dangling / N);
+      });
+      let delta = 0;
+      g.ids.forEach(i => delta += Math.abs(next[i] - pr[i]));
+      pr = next;
+      hist.push(Object.assign({}, pr));
+      if (delta < 1e-9) break;
+    }
+    return { pr, hist };
+  }
+  function randomSurfer(g, moves) {
+    const ids = g.ids, visits = {};
+    ids.forEach(i => visits[i] = 0);
+    let cur = ids[Math.floor(Math.random() * ids.length)];
+    for (let k = 0; k < moves; k++) {
+      visits[cur]++;
+      const outs = g.out[cur];
+      cur = (outs.length && Math.random() < D) ? outs[Math.floor(Math.random() * outs.length)] : ids[Math.floor(Math.random() * ids.length)];
+    }
+    const pr = {};
+    ids.forEach(i => pr[i] = visits[i] / moves);
+    return pr;
+  }
+
+  // ---------- Trust ----------
+  const trustedLinks = id => graph.inbound[id].filter(j => graph.inbound[j].length > 0).length;
+  function trust(id) {
+    const r = formulaRanks[id] * graph.ids.length, inb = trustedLinks(id);
+    let t = 95 * (1 - Math.exp(-1.3 * r)) + 3 * Math.min(inb, 3);
+    if (inb === 0) t = Math.min(t, 15);
+    return Math.max(1, Math.min(98, Math.round(t)));
+  }
+  function verdict(t) {
+    if (t >= 40) return { label: "LIKELY REAL", cls: "t-real", color: "var(--new)" };
+    if (t >= 20) return { label: "UNCERTAIN", cls: "t-unsure", color: "var(--warn)" };
+    return { label: "LIKELY FAKE", cls: "t-fake", color: "var(--old)" };
+  }
+  const isFake = id => trust(id) < 20;
+
+  // ---------- Text helpers ----------
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const tokens = q => q.toLowerCase().split(/[^a-z0-9+]+/).filter(t => t.length > 1);
+  function keywordCount(id, toks) {
+    const text = (content(id).title + " " + content(id).body).toLowerCase();
+    let n = 0;
+    toks.forEach(t => { n += (text.match(new RegExp("\\b" + reEsc(t), "g")) || []).length; });
+    return n;
+  }
+  function highlight(text, toks) {
+    let h = esc(text);
+    toks.forEach(t => { h = h.replace(new RegExp("\\b(" + reEsc(t) + "\\w*)", "gi"), "<mark>$1</mark>"); });
+    return h;
+  }
+  const snippet = (id, toks) => { const b = content(id).body; return highlight(b.length > 130 ? b.slice(0, 127) + "…" : b, toks); };
+  function topRepeat(id) {
+    const counts = {};
+    ((content(id).title + " " + content(id).body).toLowerCase().match(/[a-z]+/g) || []).forEach(w => { if (w.length > 3) counts[w] = (counts[w] || 0) + 1; });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])[0] || ["-", 0];
+  }
+
+  // ---------- 01 Search battle ----------
+  function runSearch() {
+    const q = document.getElementById("q").value.trim();
+    const toks = tokens(q);
+    const hide = document.getElementById("hideFake").checked;
+    let pool = graph.ids.map(id => ({ id, count: toks.length ? keywordCount(id, toks) : 1 })).filter(r => r.count > 0);
+    const hidden = hide ? pool.filter(r => isFake(r.id)).length : 0;
+    if (hide) pool = pool.filter(r => !isFake(r.id));
+
+    const oldRows = pool.slice().sort((a, b) => b.count - a.count || a.id - b.id);
+    // relevance is capped at 3 matches, so repeating a word more often gains nothing
+    const rel = r => toks.length ? 0.5 + 0.5 * Math.min(r.count, 3) / 3 : 1;
+    const newRows = pool.map(r => ({ ...r, score: rel(r) * ranks[r.id] * (1 + 0.15 * Math.log(1 + (clicks[r.id] || 0))) })).sort((a, b) => b.score - a.score);
+
+    document.getElementById("meta").textContent = `${pool.length} page${pool.length === 1 ? "" : "s"} found${q ? " for “" + q + "”" : ""}` + (hidden ? ` · ${hidden} fake hidden` : "");
+    document.getElementById("newSub").textContent = method === "surfer"
+      ? `Ranks by link votes: share of ${SURFER_MOVES.toLocaleString()} random-surfer moves. Keyword matches count only up to 3.`
+      : "Ranks by link votes (PageRank). Keyword matches count only up to 3, so stuffing doesn't help.";
+
+    const maxCount = Math.max(1, ...oldRows.map(r => r.count));
+    const maxPR = Math.max(1e-9, ...newRows.map(r => ranks[r.id]));
+    const item = (r, i, kind) => {
+      const c = content(r.id), t = trust(r.id), v = verdict(t);
+      const metric = kind === "old"
+        ? `<div class="metric"><span>“${esc(q || "any")}” × ${r.count}</span><div class="track"><div class="fill" style="width:${100 * r.count / maxCount}%"></div></div></div>`
+        : `<div class="metric"><span>PR ${(ranks[r.id] * 100).toFixed(1)}%</span><div class="track"><div class="fill" style="width:${100 * ranks[r.id] / maxPR}%"></div></div><span>${graph.inbound[r.id].length} votes</span></div>`;
+      const tag = kind === "new" ? `<span class="tag ${v.cls}">${v.label} ${t}%</span>` : "";
+      return `<div class="item ${isFake(r.id) ? "fake-row" : ""}">
+        <div class="pos">${i + 1}</div>
+        <div>
+          <div class="site">${esc(c.url)} · Page${r.id}</div>
+          <a class="title" data-id="${r.id}">${highlight(c.title, toks)}</a>${tag}
+          <p class="snip">${snippet(r.id, toks)}</p>
+          ${metric}
+        </div>
+      </div>`;
+    };
+    const none = `<div class="empty">No pages match. Try “pizza”, “learn coding” or “free laptop”.</div>`;
+    document.getElementById("oldList").innerHTML = oldRows.length ? oldRows.map((r, i) => item(r, i, "old")).join("") : none;
+    document.getElementById("newList").innerHTML = newRows.length ? newRows.map((r, i) => item(r, i, "new")).join("") : none;
+
+    const vEl = document.getElementById("verdict");
+    if (!pool.length) vEl.textContent = "No results to compare.";
+    else {
+      const oldTop = oldRows[0].id, newTop = newRows[0].id;
+      if (isFake(oldTop)) {
+        const newPos = newRows.findIndex(r => r.id === oldTop) + 1;
+        vEl.innerHTML = `⚠ The old way puts the fake site <u>${esc(content(oldTop).url)}</u> at #1 because it repeats the keyword ${oldRows[0].count} times. PageRank drops it to #${newPos} of ${newRows.length} and puts <u>${esc(content(newTop).url)}</u> first, because real pages link to it.`;
+      } else if (oldTop !== newTop) {
+        vEl.innerHTML = `The old way picks <u>${esc(content(oldTop).url)}</u>. PageRank picks <u>${esc(content(newTop).url)}</u>, which more pages link to.`;
+      } else {
+        vEl.innerHTML = `Both methods agree: <u>${esc(content(newTop).url)}</u> is the top result.`;
+      }
+    }
+    document.querySelectorAll(".title").forEach(a => a.addEventListener("click", () => {
+      const id = Number(a.dataset.id);
+      clicks[id] = (clicks[id] || 0) + 1;
+      try { localStorage.setItem("rankle-clicks", JSON.stringify(clicks)); } catch (e) {}
+      runSearch();
+    }));
+  }
+
+  // ---------- 02 Real vs fake ----------
+  function renderRealFake() {
+    const toks = tokens(document.getElementById("q").value);
+    const sorted = graph.ids.slice().sort((a, b) => trust(b) - trust(a));
+    const matching = toks.length ? sorted.filter(id => keywordCount(id, toks) > 0) : sorted;
+    const real = (matching.length ? matching : sorted)[0];
+    // the most keyword-stuffed fake that matches the search, else the most stuffed fake overall
+    const fakes = sorted.filter(id => isFake(id) && !(extra[id] && extra[id].farm));
+    const fakePool = fakes.filter(id => matching.includes(id));
+    const fake = (fakePool.length ? fakePool : fakes.length ? fakes : sorted.slice(-1))
+      .slice().sort((a, b) => topRepeat(b)[1] - topRepeat(a)[1])[0];
+
+    function card(id, kind) {
+      const c = content(id), t = trust(id), v = verdict(t), inb = graph.inbound[id], rep = topRepeat(id);
+      const words = (c.title + " " + c.body).split(/\s+/).length;
+      const facts = kind === "real" ? [
+        ["✔", `${inb.length} page${inb.length === 1 ? "" : "s"} link to it (${inb.map(i => "P" + i).join(", ") || "none"})`],
+        ["✔", `PageRank ${(formulaRanks[id] * 100).toFixed(1)}%`],
+        ["✔", `Natural wording: its most repeated word, “${rep[0]}”, appears ${rep[1]}×`],
+        ["✔", `Links out to pages it relates to`]
+      ] : [
+        ["✘", inb.length ? `${inb.length} links in, but ${trustedLinks(id) ? "too few" : "none"} from trusted pages` : "0 pages link to it. Nobody vouches for it."],
+        ["✘", `PageRank ${(formulaRanks[id] * 100).toFixed(1)}%, close to the minimum anyone gets`],
+        ["✘", `Keyword stuffing: “${rep[0]}” repeated ${rep[1]}× in ${words} words`],
+        ["!", `Links out to ${graph.out[id].map(i => "P" + i).join(", ") || "nothing"} to look legitimate. That doesn't raise its score.`]
+      ];
+      return `<div class="vcard ${kind}">
+        <span class="ribbon">${kind === "real" ? "REAL" : "FAKE"} · PAGE${id}</span>
+        <div class="site">${esc(c.url)}</div>
+        <h3>${esc(c.title)}</h3>
+        <div class="big">${t}%</div>
+        <div class="site">chance it’s a real website</div>
+        <div class="meter"><div style="width:${t}%;background:${v.color}"></div></div>
+        <ul class="facts">${facts.map(f => `<li><span>${f[0]}</span><span>${f[1]}</span></li>`).join("")}</ul>
+      </div>`;
+    }
+    document.getElementById("vs").innerHTML = card(real, "real") + `<div class="mid">vs</div>` + card(fake, "fake");
+    document.getElementById("trustTable").innerHTML =
+      `<tr><th>Page</th><th>Site</th><th class="n">Keyword hits</th><th class="n">Links in</th><th class="n">PageRank</th><th class="n">Real %</th><th>Verdict</th></tr>` +
+      sorted.map(id => {
+        const t = trust(id), v = verdict(t);
+        return `<tr><td>P${id}</td><td>${esc(content(id).url)}</td><td class="n">${toks.length ? keywordCount(id, toks) : "-"}</td>
+          <td class="n">${graph.inbound[id].length}</td><td class="n">${(formulaRanks[id] * 100).toFixed(1)}%</td>
+          <td class="n">${t}%</td><td><span class="tag ${v.cls}" style="margin:0">${v.label}</span></td></tr>`;
+      }).join("");
+  }
+
+  // ---------- 04 Graph + iterations ----------
+  function renderGraph() {
+    const svg = document.getElementById("graph");
+    const W = 640, H = 460, cx = W / 2, cy = H / 2, ids = graph.ids, n = ids.length;
+    const maxPR = Math.max(...ids.map(i => formulaRanks[i]));
+    const scale = n > 14 ? 0.6 : n > 9 ? 0.8 : 1;
+    const pos = {};
+    ids.forEach((id, k) => {
+      const a = -Math.PI / 2 + 2 * Math.PI * k / n;
+      pos[id] = { x: cx + 245 * Math.cos(a), y: cy + 175 * Math.sin(a), r: (14 + 22 * formulaRanks[id] / maxPR) * scale };
+    });
+    let edges = "", nodes = "";
+    ids.forEach(s => graph.out[s].forEach(t => {
+      const a = pos[s], b = pos[t], dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
+      const off = graph.out[t].includes(s) ? 6 : 0, ox = -uy * off, oy = ux * off;
+      const bad = isFake(s);
+      edges += `<line x1="${a.x + ux * a.r + ox}" y1="${a.y + uy * a.r + oy}" x2="${b.x - ux * (b.r + 7) + ox}" y2="${b.y - uy * (b.r + 7) + oy}" stroke="${bad ? "var(--old)" : "var(--ink)"}" stroke-width="1.6" ${bad ? 'stroke-dasharray="6 4"' : ""} marker-end="url(#${bad ? "ah2" : "ah"})"/>`;
+    }));
+    ids.forEach(id => {
+      const p = pos[id], fake = isFake(id), fs = n > 14 ? 10 : 13;
+      nodes += `<circle cx="${p.x + 3}" cy="${p.y + 3}" r="${p.r}" fill="var(--line)"/>
+        <circle cx="${p.x}" cy="${p.y}" r="${p.r}" fill="${fake ? "var(--old)" : "var(--yellow)"}" stroke="var(--line)" stroke-width="2"/>
+        <text x="${p.x}" y="${p.y + (n > 14 ? 4 : -1)}" text-anchor="middle" font-size="${fs}" font-weight="800" fill="#17150f" font-family="Georgia,serif">P${id}</text>
+        ${n > 14 ? "" : `<text x="${p.x}" y="${p.y + 13}" text-anchor="middle" font-size="10" fill="#17150f" font-family="Menlo,monospace">${(formulaRanks[id] * 100).toFixed(1)}%</text>`}`;
+    });
+    svg.innerHTML = `<defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="var(--ink)"/></marker>
+      <marker id="ah2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="var(--old)"/></marker>
+    </defs>${edges}${nodes}`;
+  }
+  function renderIterations() {
+    const last = iterations.length - 1;
+    const show = [0, 1, 2, 3, 5, 10, last].filter((v, i, a) => v <= last && a.indexOf(v) === i);
+    document.getElementById("iterNote").textContent = `Every page starts at 1/N = ${(100 / graph.ids.length).toFixed(1)}%. The scores settle after ${last} rounds.`;
+    document.getElementById("iterTable").innerHTML =
+      `<tr><th>Round</th>${graph.ids.map(i => `<th class="n">P${i}</th>`).join("")}</tr>` +
+      show.map(k => `<tr><td>${k === last ? "Final (" + k + ")" : k}</td>${graph.ids.map(i => `<td class="n">${(iterations[k][i] * 100).toFixed(1)}%</td>`).join("")}</tr>`).join("");
+    const diff = Math.max(...graph.ids.map(i => Math.abs(surferRanks[i] - formulaRanks[i]))) * 100;
+    document.getElementById("surferNote").textContent =
+      `A simulated surfer made ${SURFER_MOVES.toLocaleString()} moves, following links 85% of the time. The share of visits each page got matches the formula to within ${diff.toFixed(1)} percentage points. Switch “Random surfer” on at the top to rank with it.`;
+  }
+
+  // ---------- 03 Fake lab ----------
+  function renderAdded() {
+    const ul = document.getElementById("addedList");
+    if (!addedFakes.length) { ul.innerHTML = `<li style="color:var(--muted)">None yet. Pick a preset or fill in the form.</li>`; return; }
+    ul.innerHTML = addedFakes.map(f => {
+      const t = trust(f.id), v = verdict(t);
+      return `<li><span><b>P${f.id}</b> ${esc(content(f.id).url)}${f.farm.length ? ` <span class="site">+${f.farm.length} farm pages</span>` : ""}
+        <span class="tag ${v.cls}">${t}%</span></span><button type="button" data-rm="${f.id}">Remove</button></li>`;
+    }).join("");
+    ul.querySelectorAll("[data-rm]").forEach(b => b.addEventListener("click", () => removeFake(Number(b.dataset.rm))));
+  }
+  function nextId() { return Math.max(0, ...graph.ids, ...Object.keys(extra).map(Number)) + 1; }
+
+  function addFake(name, word, times, links, farmCount) {
+    const id = nextId();
+    const w = word.toLowerCase();
+    const stuffed = Array.from({ length: times }, (_, i) => i % 4 === 1 ? "best " + w : i % 4 === 3 ? "cheap " + w : w).join(" ");
+    extra[id] = { title: `${word.toUpperCase()} ${word.toUpperCase()} – Best ${word} Deals Cheap ${word} Free!!!`, url: name, body: stuffed + " click here now", fake: true };
+    const lines = [`# Added fake: ${name}`, `Page${id}->${links.join(",")}`];
+    const farm = [];
+    for (let k = 1; k <= farmCount; k++) {
+      const fid = id + k;
+      extra[fid] = { title: `Link farm page ${k} for ${name}`, url: `farm${k}-${name.replace(/[^a-z0-9]/gi, "").slice(0, 12).toLowerCase()}.biz`, body: "links links links", farm: true, fake: true };
+      lines.push(`Page${fid}->${id}`);
+      farm.push(fid);
+    }
+    addedFakes.push({ id, farm, lines });
+    currentData = currentData.trim() + "\n" + lines.join("\n");
+    document.getElementById("dataInput").value = currentData;
+    recompute(currentData);
+    document.getElementById("q").value = word;
+    refresh();
+    renderAdded();
+
+    // explain what happened
+    const toks = tokens(word);
+    const pool = graph.ids.filter(i => keywordCount(i, toks) > 0);
+    const oldPos = pool.slice().sort((a, b) => keywordCount(b, toks) - keywordCount(a, toks) || a - b).indexOf(id) + 1;
+    const relOf = i => 0.5 + 0.5 * Math.min(keywordCount(i, toks), 3) / 3;
+    const newPos = pool.slice().sort((a, b) => relOf(b) * ranks[b] - relOf(a) * ranks[a]).indexOf(id) + 1;
+    document.getElementById("labNote").innerHTML =
+      `<b>${esc(name)}</b> repeats “${esc(word)}” ${times} times${farm.length ? ` and has ${farm.length} link-farm pages voting for it` : ""}. ` +
+      `Old way: <b>#${oldPos}</b> of ${pool.length}. PageRank: <b>#${newPos}</b> of ${pool.length}, with a ${trust(id)}% chance of being real. ` +
+      (farm.length ? "The farm votes come from pages nobody links to, so they barely count." : "Repeating a word doesn't earn link votes.");
+  }
+  function removeFake(id) {
+    const f = addedFakes.find(x => x.id === id);
+    if (!f) return;
+    addedFakes = addedFakes.filter(x => x !== f);
+    [id, ...f.farm].forEach(i => delete extra[i]);
+    let text = currentData;
+    f.lines.forEach(l => { text = text.split("\n").filter(x => x.trim() !== l).join("\n"); });
+    currentData = text;
+    document.getElementById("dataInput").value = currentData;
+    recompute(currentData);
+    renderAdded();
+    document.getElementById("labNote").textContent = "";
+  }
+
+  // ---------- Recompute ----------
+  function recompute(text) {
+    graph = parse(text);
+    const res = pageRank(graph);
+    formulaRanks = res.pr; iterations = res.hist;
+    surferRanks = randomSurfer(graph, SURFER_MOVES);
+    ranks = method === "surfer" ? surferRanks : formulaRanks;
+    currentData = text;
+    document.getElementById("dataPreview").textContent = text.split("\n").filter(l => l.trim() && !l.startsWith("#")).join("\n");
+    document.getElementById("pageCount").textContent = graph.ids.length;
+    runSearch(); renderRealFake(); renderGraph(); renderIterations();
+  }
+  function refresh() { runSearch(); renderRealFake(); }
+
+  // ---------- Wiring ----------
+  const dataInput = document.getElementById("dataInput");
+  const qEl = document.getElementById("q");
+  dataInput.value = ORIGINAL_DATA;
+
+  document.getElementById("searchForm").addEventListener("submit", e => { e.preventDefault(); refresh(); document.getElementById("battle").scrollIntoView({ behavior: "smooth" }); });
+  qEl.addEventListener("input", refresh);
+  document.getElementById("hideFake").addEventListener("change", runSearch);
+
+  const SUG = ["pizza", "learn coding", "free laptop", "tech news", "python"];
+  const sug = document.getElementById("suggest");
+  sug.innerHTML = SUG.map(s => `<button type="button" class="chip">${s}</button>`).join("");
+  sug.querySelectorAll("button").forEach(b => b.addEventListener("click", () => { qEl.value = b.textContent; refresh(); }));
+
+  document.querySelectorAll("#method button").forEach(b => b.addEventListener("click", () => {
+    method = b.dataset.m;
+    document.querySelectorAll("#method button").forEach(x => x.classList.toggle("on", x === b));
+    if (method === "surfer") surferRanks = randomSurfer(graph, SURFER_MOVES);
+    ranks = method === "surfer" ? surferRanks : formulaRanks;
+    runSearch();
+  }));
+
+  // Fake lab presets
+  const PRESETS = [
+    { label: "🍕 Pizza spammer", name: "cheap-pizza-deals-now.biz", word: "pizza", times: 25, links: "7, 8", farm: 0 },
+    { label: "🍕 Pizza + link farm", name: "pizza-king-offers.xyz", word: "pizza", times: 30, links: "7", farm: 5 },
+    { label: "💻 Laptop scam", name: "win-laptop-today.click", word: "laptop", times: 20, links: "2, 3", farm: 3 },
+    { label: "🐍 Python spam", name: "python-free-course-now.top", word: "python", times: 15, links: "1", farm: 0 }
+  ];
+  const pre = document.getElementById("presets");
+  pre.innerHTML = PRESETS.map((p, i) => `<button type="button" class="chip" data-p="${i}">${p.label}</button>`).join("");
+  pre.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+    const p = PRESETS[Number(b.dataset.p)];
+    document.getElementById("fName").value = p.name;
+    document.getElementById("fWord").value = p.word;
+    document.getElementById("fTimes").value = p.times;
+    document.getElementById("fLinks").value = p.links;
+    document.getElementById("fFarm").value = p.farm;
+  }));
+
+  document.getElementById("fakeForm").addEventListener("submit", e => {
+    e.preventDefault();
+    const err = document.getElementById("fakeErr");
+    const name = document.getElementById("fName").value.trim().toLowerCase().replace(/\s+/g, "-");
+    const word = document.getElementById("fWord").value.trim();
+    const times = Math.max(1, Math.min(200, parseInt(document.getElementById("fTimes").value, 10) || 1));
+    const farm = Math.max(0, Math.min(20, parseInt(document.getElementById("fFarm").value, 10) || 0));
+    const links = document.getElementById("fLinks").value.split(/[,\s]+/).filter(Boolean).map(Number);
+    if (!name || !/^[a-z0-9+]{2,}/i.test(word)) { err.textContent = "Give it a name and a keyword."; return; }
+    if (links.some(n => isNaN(n) || !graph.ids.includes(n))) { err.textContent = "Links must be existing page numbers (" + graph.ids[0] + "–" + graph.ids[graph.ids.length - 1] + ")."; return; }
+    if (graph.ids.length + 1 + farm > 40) { err.textContent = "That's enough pages for a mini web. Remove some fakes first."; return; }
+    err.textContent = "";
+    addFake(name, word, times, links, farm);
+    // bump the default name so the next click adds a distinct site
+    document.getElementById("fName").value = name.replace(/(\d*)(\.[a-z]+)?$/, (m, d, ext) => (Number(d || 1) + 1) + (ext || ""));
+  });
+  document.getElementById("clearFakes").addEventListener("click", () => {
+    addedFakes.slice().forEach(f => removeFake(f.id));
+  });
+
+  const dataErr = document.getElementById("dataErr");
+  document.getElementById("recalc").addEventListener("click", () => {
+    try { recompute(dataInput.value); dataErr.textContent = ""; renderAdded(); } catch (e) { dataErr.textContent = e.message; }
+  });
+  document.getElementById("reset").addEventListener("click", () => {
+    extra = {}; addedFakes = [];
+    dataInput.value = ORIGINAL_DATA; dataErr.textContent = ""; document.getElementById("labNote").textContent = "";
+    qEl.value = "pizza";
+    recompute(ORIGINAL_DATA); renderAdded();
+  });
+
+  const root = document.documentElement;
+  try { const s = localStorage.getItem("rankle-theme"); if (s) root.dataset.theme = s; } catch (e) {}
+  document.getElementById("themeBtn").addEventListener("click", () => {
+    const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    root.dataset.theme = dark ? "light" : "dark";
+    try { localStorage.setItem("rankle-theme", root.dataset.theme); } catch (e) {}
+  });
+
+  recompute(ORIGINAL_DATA);
+  renderAdded();
+})();
+</script>
+</body>
+</html>
